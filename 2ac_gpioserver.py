@@ -404,7 +404,8 @@ def fader(sample_array, fade_in=0, fade_out=0):
             sample_array[len(enveloppe):] ))
             
     if fade_out:
-        enveloppe = np.flip(np.linspace(0, 1, num=int(round(sample_rate * fade_out))))**2
+        enveloppe = np.flip(np.linspace(0, 1, num=int(round(sample_rate * fade_out))),
+                            axis=0)**2
         
         # considers only the beginning of the enveloppe if its length exceeds
         # that of the sample array
@@ -415,10 +416,14 @@ def fader(sample_array, fade_in=0, fade_out=0):
     
     return sample_array
 
-def whitenoise_samples(length, fade_in=0, fade_out=0):
+def whitenoise_samples(length, amplitude=1, fade_in=0, fade_out=0):
     
     # get the sound format from the pygame's mixer
     sample_rate, format, channels = pygame.mixer.get_init()
+    
+    # check the amplitude value
+    if amplitude < 0 or amplitude > 1:
+        raise ValueError("amplitude must be between 0 and 1")
     
     # the maximum amplitude is the greatest positive integer value that a sample
     # can take, given the sound format
@@ -441,7 +446,7 @@ def whitenoise_samples(length, fade_in=0, fade_out=0):
     sample_array = fader(sample_array, fade_in, fade_out)
     
     # --- sample array in the sound value format
-    sample_array *= max_amplitude
+    sample_array *= max_amplitude * amplitude
     
     # duplicates in channels
     if channels > 1:
@@ -450,7 +455,7 @@ def whitenoise_samples(length, fade_in=0, fade_out=0):
     
     return sample_array
 
-def sinetone_samples(frequency, length, fade_in=0, fade_out=0):
+def sinetone_samples(frequency, length, amplitude=1, fade_in=0, fade_out=0):
     '''
     Returns an array of sample values for a sine tone of the given length 
     (in seconds) and frequency (in Herz) an the current pygame's mixer 
@@ -460,6 +465,10 @@ def sinetone_samples(frequency, length, fade_in=0, fade_out=0):
     
     # get the sound format from the pygame's mixer
     sample_rate, format, channels = pygame.mixer.get_init()
+    
+    # check the amplitude value
+    if amplitude < 0 or amplitude > 1:
+        raise ValueError("amplitude must be between 0 and 1")
     
     # the maximum amplitude is the greatest positive integer value that a sample
     # can take, given the sound format
@@ -488,7 +497,7 @@ def sinetone_samples(frequency, length, fade_in=0, fade_out=0):
     # --- sample array in the sound value format
     if not signed:
         sample_array = (sample_array/2) + 0.5
-    sample_array *= max_amplitude
+    sample_array *= max_amplitude * amplitude
     
     # duplicates in channels
     if channels > 1:
@@ -515,23 +524,29 @@ def main(argv=sys.argv):
     ### MANUAL CONFIG ------------------------------------------------###
 
     # GPIO pins
+    sys.stderr.write("[i] Initializaing LED connections...\n")
     LEFT_LED = gpiozero.LED(2)
     RIGHT_LED = gpiozero.LED(3)
+    sys.stderr.write("[i] done\n")
     
     # Mixer
+    sys.stderr.write("[i] Initializaing the audio mixer...\n")
     pygame.mixer.init(22050, -16, 1, 1024)
+    sys.stderr.write("[i] done\n")
     
     # Sounds
-    WHITE_NOISE = whitenoise_samples(1, 0.2, 0.2)
-    LOW_TONE = sinetone_samples(440, 0.1,0.02,0.02)
-    HIGH_TONE = sinetone_samples(1318.51, 0.1,0.02,0.02)
+    sys.stderr.write("[i] Composing music...\n")
+    WHITE_NOISE = whitenoise_samples(1, 0.3, 0.2, 0.2)
+    LOW_TONE = sinetone_samples(440, 0.1, 1, 0.02, 0.02)
+    HIGH_TONE = sinetone_samples(1318.51, 0.1, 1, 0.02, 0.02)
     DISTRACTOR_TONES = [
-        sinetone_samples(987.77, 0.1,0.02,0.02),
-        sinetone_samples(739.99, 0.1,0.02,0.02),
-        sinetone_samples(554.37, 0.1,0.02,0.02),
-        sinetone_samples(392.00, 0.1,0.02,0.02)]
+        sinetone_samples(987.77, 0.1, 1, 0.02, 0.02),
+        sinetone_samples(739.99, 0.1, 1, 0.02, 0.02),
+        sinetone_samples(554.37, 0.1, 1, 0.02, 0.02),
+        sinetone_samples(392.00, 0.1, 1, 0.02, 0.02)]
     LOW_TONE_WITH_DISTRACTOR = DISTRACTOR_TONES + [LOW_TONE]
     HIGH_TONE_WITH_DISTRACTOR = DISTRACTOR_TONES + [HIGH_TONE]
+    sys.stderr.write("[i] done\n")
     
     ### --------------------------------------------------------------###
     
@@ -565,30 +580,27 @@ def main(argv=sys.argv):
             # clear the nose poke flags
             monitor.clear_nose_poke()
             
-            # start the timer
-            t0 = time.time()          
-
             sys.stdout.write("Starting trial #{:04d}: reward on the {}\n".format(
                              i, correct))        
             
             ### protocol specific --------------------------------------#
             # at the mouse entrance in the trail zone, play 1 second of 
             # white noise
-            speaker.play(1, 
-                        
-                        # prevent the speaker from receiving commands 
-                        # from 1 second
-                        rest=1)
+            speaker.play(1)
             
             # ... then light up the LED above the no reward port and a
             # specific tone indicates the reward port.
             time.sleep(1.0)
             speaker.sound = pygame.mixer.Sound(tone)
+            
             light.play(1)
             sys.stdout.write("#{:04d}: light on the {}\n".format(i, incorrect))
             
             speaker.play(0.2*5)
             sys.stdout.write("#{:04d}: tone played\n".format(i))
+
+            # start the timer
+            t0 = time.time() 
             
             # wait for the mouse nose poke
             nose_poke = monitor.wait_for_nose_poke(timeout=10.0)
@@ -600,7 +612,7 @@ def main(argv=sys.argv):
                 if monitor.nose_poke_side() == correct:
                     outcome = "correct"
                     dispenser.play(1)
-                    sys.stdout.write("#{:04d}: Cheerio on the {}".format(i, correct))
+                    sys.stdout.write("#{:04d}: Cheerio on the {}\n".format(i, correct))
                 else:
                     outcome = "incorrect"
             else:
