@@ -3,7 +3,6 @@
 ### TO DO
 # - display time stamp at each tracking input
 # - reformat the output for data analysis
-# - rewrite the controller class for each of the different devices
 
 '''
 USAGE
@@ -22,8 +21,8 @@ NOTE
     Compatible with Python 3
 '''
 
-import getopt, sys, fileinput, socket, random, subprocess, time, gpiozero
-from pygame import mixer
+import getopt, sys, fileinput, socket, random, subprocess, time, gpiozero, pygame
+import numpy as np
 from os import path
 from queue import Queue
 from threading import Event, Thread
@@ -31,6 +30,10 @@ from threading import Event, Thread
 HOST = '127.0.0.1'  # localhost
 PORT = 13013        # listen port
 
+### MOCK PINS (TEST)
+from gpiozero.pins.mock import MockFactory
+from gpiozero import Device
+Device.pin_factory = MockFactory()
 
 class Options(dict):
 
@@ -247,7 +250,7 @@ class Controller(Device):
                 self.off()
                 time.sleep(rest)    
 
-class MockController(Controller)
+class MockController(Controller):
     '''
     Behave like other controllers, except it does nothing.
     '''
@@ -301,12 +304,12 @@ class LEDPlayer(Controller):
         if isinstance(other, LED):
             return self.LED == other.LED
 
-class SoundPlayer(Controller)
+class SoundPlayer(Controller):
     '''
     Allowing playing a WAV file according to a given time schedule.
     '''
     
-    def __init__(self, sound):
+    def __init__(self, sound=None):
         
         # check if the mixer is available
         if pygame.mixer.get_init() is None:
@@ -314,7 +317,7 @@ class SoundPlayer(Controller)
                       " pygame.mixer.init(...) before making a" 
                       " SoundPlayer instance.")
         
-        # a Sound object returned by pygame.mixer.Sound(...)
+        # a Sound object returned by pygame.mixer.Sound(...), or None
         self.sound = sound
         
         # Command queue
@@ -327,15 +330,14 @@ class SoundPlayer(Controller)
         self.stop = Event()
         
     def on(self):
-        return self.sound.play()
+        return self.sound.play() if self.sound is not None else None
         
     def off(self):
-        return self.sound.stop()
+        return self.sound.stop() if self.sound is not None else None
     
     def __eq__(self, other):
         if isinstance(other, SoundPlayer):
             return self.wavfile == other.wavfile
-
 
 class Trials(object):
     '''
@@ -385,6 +387,116 @@ class Trials(object):
         # return the trial number and the reward position
         return (self.i, self.positions[self.reward_position])                
 
+def fader(sample_array, fade_in=0, fade_out=0):
+
+    # get the sound format from the pygame's mixer
+    sample_rate, format, channels = pygame.mixer.get_init()
+    length = len(sample_array)
+    
+    if fade_in:
+        enveloppe = np.linspace(0, 1, num=int(round(sample_rate * fade_in)))**2
+        
+        # considers only the beginning of the enveloppe if its length exceeds
+        # that of the sample array
+        if fade_in > length/sample_rate: enveloppe = enveloppe[:length]
+        sample_array = np.concatenate(( 
+            enveloppe * sample_array[:len(enveloppe)],
+            sample_array[len(enveloppe):] ))
+            
+    if fade_out:
+        enveloppe = np.flip(np.linspace(0, 1, num=int(round(sample_rate * fade_out))))**2
+        
+        # considers only the beginning of the enveloppe if its length exceeds
+        # that of the sample array
+        if fade_out > length/sample_rate: enveloppe = enveloppe[:length]
+        sample_array = np.concatenate(( 
+            sample_array[:-len(enveloppe)],     
+            enveloppe * sample_array[-len(enveloppe):] ))
+    
+    return sample_array
+
+def whitenoise_samples(length, fade_in=0, fade_out=0):
+    
+    # get the sound format from the pygame's mixer
+    sample_rate, format, channels = pygame.mixer.get_init()
+    
+    # the maximum amplitude is the greatest positive integer value that a sample
+    # can take, given the sound format
+    if format < 0:
+        signed = True
+        max_amplitude = 2**(abs(format) - 1)
+        dtype = np.dtype('int' + str(abs(format)))
+    else:
+        signed = False
+        max_amplitude = 2**(format)
+        dtype = np.dtype('uint' + str(format))
+    
+    # --- sample array in radians
+    sample_number = int(round(sample_rate * length))
+    low = -1 if signed else 0
+    high = 1
+    sample_array = np.random.uniform(low, high, sample_number)
+    
+    # --- add the fade effects
+    sample_array = fader(sample_array, fade_in, fade_out)
+    
+    # --- sample array in the sound value format
+    sample_array *= max_amplitude
+    
+    # duplicates in channels
+    if channels > 1:
+        sample_array = list(zip(*[sample_array]*channels))
+    sample_array = np.array(sample_array, dtype=dtype)
+    
+    return sample_array
+
+def sinetone_samples(frequency, length, fade_in=0, fade_out=0):
+    '''
+    Returns an array of sample values for a sine tone of the given length 
+    (in seconds) and frequency (in Herz) an the current pygame's mixer 
+    sample rate and format. Fade in and fade out can be defined in seconds as 
+    well.
+    '''
+    
+    # get the sound format from the pygame's mixer
+    sample_rate, format, channels = pygame.mixer.get_init()
+    
+    # the maximum amplitude is the greatest positive integer value that a sample
+    # can take, given the sound format
+    if format < 0:
+        signed = True
+        max_amplitude = 2**(abs(format) - 1)
+        dtype = np.dtype('int' + str(abs(format)))
+    else:
+        signed = False
+        max_amplitude = 2**(format)
+        dtype = np.dtype('uint' + str(format))
+    
+    # make the sample array given the length, the frequency and the sound format
+    # --- parameters
+    frequency = frequency
+    length = length
+    omega = 2 * np.pi * frequency
+
+    # --- sample array in radians
+    sample_number = int(round(sample_rate * length))
+    sample_array = np.sin([ omega * x/sample_rate for x in range(sample_number) ])
+    
+    # --- add the fade effects
+    sample_array = fader(sample_array, fade_in, fade_out)
+    
+    # --- sample array in the sound value format
+    if not signed:
+        sample_array = (sample_array/2) + 0.5
+    sample_array *= max_amplitude
+    
+    # duplicates in channels
+    if channels > 1:
+        sample_array = list(zip(*[sample_array]*channels))
+    sample_array = np.array(sample_array, dtype=dtype)
+    
+    return sample_array
+
 def main(argv=sys.argv):
     
     if sys.version_info[0] < 3:
@@ -407,12 +519,19 @@ def main(argv=sys.argv):
     RIGHT_LED = gpiozero.LED(3)
     
     # Mixer
-    pygame.mixer.init() ### to be tested for the right config (https://www.pygame.org/docs/ref/mixer.html#pygame.mixer.init)
+    pygame.mixer.init(22050, -16, 1, 1024)
     
     # Sounds
-    WHITE_NOISE = pygame.mixer.Sound("/home/irlab/E/Sound/whitenoise.wav")
-    #LOW_TONE = 
-    
+    WHITE_NOISE = whitenoise_samples(1, 0.2, 0.2)
+    LOW_TONE = sinetone_samples(440, 0.1,0.02,0.02)
+    HIGH_TONE = sinetone_samples(1318.51, 0.1,0.02,0.02)
+    DISTRACTOR_TONES = [
+        sinetone_samples(987.77, 0.1,0.02,0.02),
+        sinetone_samples(739.99, 0.1,0.02,0.02),
+        sinetone_samples(554.37, 0.1,0.02,0.02),
+        sinetone_samples(392.00, 0.1,0.02,0.02)]
+    LOW_TONE_WITH_DISTRACTOR = DISTRACTOR_TONES + [LOW_TONE]
+    HIGH_TONE_WITH_DISTRACTOR = DISTRACTOR_TONES + [HIGH_TONE]
     
     ### --------------------------------------------------------------###
     
@@ -425,7 +544,7 @@ def main(argv=sys.argv):
          LEDPlayer(RIGHT_LED) as R_light,                   \
          MockController() as R_dispenser,                   \
          MockController() as L_dispenser,                   \
-         SoundPlayer() as speaker:
+         SoundPlayer(pygame.mixer.Sound(WHITE_NOISE)) as speaker:
     
         # loop over the trials
         while monitor.running():
@@ -433,10 +552,11 @@ def main(argv=sys.argv):
             # get the trial number and reward position
             i, correct = trials.next()
             incorrect = "right" if correct == "left" else "left"
-            
             light = R_light if correct == "left" else L_light
             dispenser = L_dispenser if correct == "left" else R_dispenser
-            pitch = "high" if correct == "left" else "low"
+            tone = HIGH_TONE_WITH_DISTRACTOR if correct == "left" else LOW_TONE_WITH_DISTRACTOR
+            random.shuffle(tone)
+            tone = np.concatenate(tone)
             
             # wait for the mouse entrance
             entrance = monitor.wait_for_entrance() 
@@ -454,7 +574,7 @@ def main(argv=sys.argv):
             ### protocol specific --------------------------------------#
             # at the mouse entrance in the trail zone, play 1 second of 
             # white noise
-            speaker.run(args=["echo", "#{:04d}: white noise".format(i)], 
+            speaker.play(1, 
                         
                         # prevent the speaker from receiving commands 
                         # from 1 second
@@ -463,10 +583,12 @@ def main(argv=sys.argv):
             # ... then light up the LED above the no reward port and a
             # specific tone indicates the reward port.
             time.sleep(1.0)
-            light.run(args=["echo", "#{:04d}: light on the {}".format(
-                                     i, incorrect)])
-            speaker.run(args=["echo", "#{:04d}: {} pitch tone".format(
-                                       i, pitch)])
+            speaker.sound = pygame.mixer.Sound(tone)
+            light.play(1)
+            sys.stdout.write("#{:04d}: light on the {}\n".format(i, incorrect))
+            
+            speaker.play(0.2*5)
+            sys.stdout.write("#{:04d}: tone played\n".format(i))
             
             # wait for the mouse nose poke
             nose_poke = monitor.wait_for_nose_poke(timeout=10.0)
@@ -477,8 +599,8 @@ def main(argv=sys.argv):
             if nose_poke:
                 if monitor.nose_poke_side() == correct:
                     outcome = "correct"
-                    dispenser.run(["echo", "#{:04d}: Cheerio on the {}".format(
-                                   i, correct)])
+                    dispenser.play(1)
+                    sys.stdout.write("#{:04d}: Cheerio on the {}".format(i, correct))
                 else:
                     outcome = "incorrect"
             else:
@@ -495,6 +617,7 @@ def main(argv=sys.argv):
                 time.sleep(5)
             else:
                 time.sleep(15)
+            speaker.sound = pygame.mixer.Sound(WHITE_NOISE)
             sys.stdout.write("-- waiting for the next trial.\n")
             
             ###-------------------------------------- protocol specific #
@@ -504,4 +627,4 @@ def main(argv=sys.argv):
     
 # does not execute main if the script is imported as a module
 if __name__ == '__main__': 
-    sys.exit(main0())
+    sys.exit(main())

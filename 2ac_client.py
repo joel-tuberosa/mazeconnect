@@ -66,10 +66,6 @@ def main(argv=sys.argv):
         s.connect((HOST, PORT))
         s.sendall(flags[options.args[0]])
         data = s.recv(1024)
-        
-    # test purpose    
-    with open("D:/test7ethovision/OF_test/open_field-test02/log.txt", "a") as fout:
-        fout.write("Sent: {}\n".format(options.args[0]))
             
     # return 0 if everything succeeded
     return 0
