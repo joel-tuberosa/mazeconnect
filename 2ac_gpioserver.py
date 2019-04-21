@@ -109,18 +109,18 @@ class Monitor(Device):
     LEFT_NOSE_POKE  = b'3'
     RIGHT_NOSE_POKE = b'4'
     
-    def __init__(self, client="127.0.0.1", port=13013):
+    def __init__(self, address="127.0.0.1", port=13013):
         '''
         Open a connection in a child thread, that will continuously
         listen to signals sent from 2ac_client.py.
         
-        client      IPv4 client's address
-        port        client's connection port
+        address     IPv4 server's address
+        port        onnection port
         '''
         
         # host and port that must be compatible with those defined in the
         # 2ac_client.py
-        self.client, self.port = client, port
+        self.address, self.port = address, port
         
         # mouse is in the trail zone
         self.in_trial_zone = Event()
@@ -190,7 +190,7 @@ class Monitor(Device):
         
         # open the connection
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.client, self.port))
+            s.bind((self.address, self.port))
             s.listen()
             while self.running():
                 conn, addr = s.accept()
@@ -554,7 +554,7 @@ def main(argv=sys.argv):
     # create an instance of the monitoring server, open connection to 
     # receive signals from 2ac_client.py, create a Controller class 
     # instance for each control to be run in parallel
-    with Monitor() as monitor,                              \
+    with Monitor(address="192.168.1.171") as monitor,                              \
          LEDPlayer(LEFT_LED) as L_light,                    \
          LEDPlayer(RIGHT_LED) as R_light,                   \
          MockController() as R_dispenser,                   \
