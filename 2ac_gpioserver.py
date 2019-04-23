@@ -31,9 +31,9 @@ HOST = '127.0.0.1'  # localhost
 PORT = 13013        # listen port
 
 ### MOCK PINS (TEST)
-from gpiozero.pins.mock import MockFactory
-from gpiozero import Device
-Device.pin_factory = MockFactory()
+#from gpiozero.pins.mock import MockFactory
+#from gpiozero import Device
+#Device.pin_factory = MockFactory()
 
 class Options(dict):
 
@@ -525,13 +525,13 @@ def main(argv=sys.argv):
 
     # GPIO pins
     sys.stderr.write("[i] Initializaing LED connections...\n")
-    LEFT_LED = gpiozero.LED(2)
-    RIGHT_LED = gpiozero.LED(3)
+    LEFT_LED = gpiozero.LED(20)
+    RIGHT_LED = gpiozero.LED(21)
     sys.stderr.write("[i] done\n")
     
     # Mixer
     sys.stderr.write("[i] Initializaing the audio mixer...\n")
-    pygame.mixer.init(22050, -16, 1, 1024)
+    pygame.mixer.init(44100, -16, 1, 1024)
     sys.stderr.write("[i] done\n")
     
     # Sounds
