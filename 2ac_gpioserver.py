@@ -27,9 +27,6 @@ from os import path
 from queue import Queue
 from threading import Event, Thread
 
-HOST = '127.0.0.1'  # localhost
-PORT = 13013        # listen port
-
 ### MOCK PINS (TEST)
 #from gpiozero.pins.mock import MockFactory
 #from gpiozero import Device
