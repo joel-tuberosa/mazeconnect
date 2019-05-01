@@ -551,7 +551,7 @@ def main(argv=sys.argv):
     # create an instance of the monitoring server, open connection to 
     # receive signals from 2ac_client.py, create a Controller class 
     # instance for each control to be run in parallel
-    with Monitor(address="192.168.1.171") as monitor,                              \
+    with Monitor(address="129.194.59.156") as monitor,                              \
          LEDPlayer(LEFT_LED) as L_light,                    \
          LEDPlayer(RIGHT_LED) as R_light,                   \
          MockController() as R_dispenser,                   \
@@ -559,7 +559,7 @@ def main(argv=sys.argv):
          SoundPlayer(pygame.mixer.Sound(WHITE_NOISE)) as speaker:
         
         # display connection info
-        sys.stderr.write("[i] listening to {}:{}\n".format(monitor.address, monitor.port)
+        sys.stderr.write("[i] listening to {}:{}\n".format(monitor.address, monitor.port))
                          
         # loop over the trials
         while monitor.running():
