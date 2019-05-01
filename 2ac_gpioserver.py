@@ -557,7 +557,10 @@ def main(argv=sys.argv):
          MockController() as R_dispenser,                   \
          MockController() as L_dispenser,                   \
          SoundPlayer(pygame.mixer.Sound(WHITE_NOISE)) as speaker:
-    
+        
+        # display connection info
+        sys.stderr.write("[i] listening to {}:{}\n".format(monitor.address, monitor.port)
+                         
         # loop over the trials
         while monitor.running():
             
